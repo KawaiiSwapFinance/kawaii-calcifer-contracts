@@ -140,7 +140,7 @@ contract Calcifire is Context, IERC20, Ownable {
 
         _tokenOwned[owner()] = _tokenTotal;
 
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x3380aE82e39E42Ca34EbEd69aF67fAa0683Bb5c1);
+        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0xcF0feBd3f17CEf5b47b0cD257aCf6025c5BFf3b7);
 
         // Create uniswap pair for token
          _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
