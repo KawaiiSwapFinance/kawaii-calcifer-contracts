@@ -4,14 +4,14 @@ pragma solidity 0.6.12;
 import './SafeMath.sol';
 import './Address.sol';
 import './Context.sol';
-import './IERC20.sol';
+import './IBEP20.sol';
 import './Ownable.sol';
 
 import './IUniswapV2Router02.sol';
 import './IUniswapV2Pair.sol';
 import './IUniswapV2Factory.sol';
 
-contract Calcifire is Context, IERC20, Ownable {
+contract Calcifire is Context, IBEP20, Ownable {
     using SafeMath for uint256;
     using Address for address;
 
@@ -279,7 +279,7 @@ contract Calcifire is Context, IERC20, Ownable {
         }
     }
 
-    function name() public view returns (string memory) {
+    function name() public view override returns (string memory) {
         return _name;
     }
 
@@ -289,6 +289,10 @@ contract Calcifire is Context, IERC20, Ownable {
 
     function decimals() public view override returns (uint256) {
         return _decimals;
+    }
+
+    function getOwner() external override view returns (address) {
+        return owner();
     }
 
     function totalSupply() public view override returns (uint256) {
