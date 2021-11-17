@@ -415,7 +415,7 @@ contract Calcifire is Context, IERC20, Ownable {
         _sellCommunityFee = sellCommunityFee;
     }
 
-    function openTrading() external onlyOperator {
+    function openTrading() external onlyOwner {
         tradingOpen = true;
     }
 
