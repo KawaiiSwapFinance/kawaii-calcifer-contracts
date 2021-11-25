@@ -6,7 +6,7 @@ import './SafeMath.sol';
 import './IBEP20.sol';
 import './SafeBEP20.sol';
 import './Ownable.sol';
-import "./ReentrancyGuard.sol";
+import './ReentrancyGuard.sol';
 import './ICalcifireReferral.sol';
 import './CalcifireToken.sol';
 import './IERC20.sol';
@@ -136,6 +136,14 @@ contract HowlsCastle is Ownable, ReentrancyGuard {
     event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
     event Boost(address indexed user, uint256 indexed pid, uint256 userBoost);
     event OperatorUpdated(address indexed operator, bool indexed status);
+    event SetBoostLimitsEnabled(bool boostLimitsEnabled);
+    event SetBoostAmounts (uint256 _maxPoolBoostAmount, uint256 _maxUserBoostAmount, uint256 _userPoolBoostAmount);
+    event SetPoolBoost (uint256 _pid, bool _isBoostEnabled);
+    event UserBoostAddedByOperator(address _user, uint256 _amount);
+    event UserPoolBoostAddedByOperator(uint256 _pid, address _user, uint256 _amount);
+    event DevAddressUpdated(address devaddr, address _devaddr);
+    event FeeAddressUpdated(address feeAddress, address _feeAddress);
+    event SetReferralCommissionRate(uint16 _referralCommissionRate);
 
     modifier onlyOperator {
         require(operators[msg.sender], "Operator: caller is not the operator");
@@ -151,6 +159,10 @@ contract HowlsCastle is Ownable, ReentrancyGuard {
         uint256 _targetCalcifirePerBlock,
         uint256 _startBlock
     ) public {
+        require(_devaddr != address(0), "_devaddr is the zero address");
+        require(_treasuryaddr != address(0), "_treasuryaddr is the zero address");
+        require(_feeAddress != address(0), "_feeAddress is the zero address");
+
         CALCIFIRE = _CALCIFIRE;
         devaddr = _devaddr;
         treasuryaddr = _treasuryaddr;
@@ -192,7 +204,9 @@ contract HowlsCastle is Ownable, ReentrancyGuard {
 
     // Set token-usd pair - used by Boosts functionality
     function setTokenUSDPair(address pairAddress, string memory tokenSymbol) public onlyOperator {
+        require(pairAddress != address(0), "setTokenUSDPair: pairAddress is the zero address");
         require(_tokenUSDPair[tokenSymbol] != pairAddress, "setTokenUSDPair: pair address is already set for this token");
+
         _tokenUSDPair[tokenSymbol] = pairAddress;
     }
 
@@ -236,13 +250,14 @@ contract HowlsCastle is Ownable, ReentrancyGuard {
     // Set token-usd pair - used by Boosts functionality
     function setBoostLimitsEnabled(bool boostLimitsEnabled) public onlyOperator {
         _boostLimitsEnabled = boostLimitsEnabled;
+
+        emit SetBoostLimitsEnabled(boostLimitsEnabled);
     }
 
     // Set Pool Boost limits
     function setPoolBoostUSDLimits(uint256 boostStep, uint256 boostUSDLimit) public onlyOperator {
         require(_boostUSDLimits[boostStep] != boostUSDLimit, "setPoolBoostUSDLimits: USD limit is already set for this % step");
         _boostUSDLimits[boostStep] = boostUSDLimit;
-
     }
 
     // Get Pool Boost limits
@@ -583,25 +598,32 @@ contract HowlsCastle is Ownable, ReentrancyGuard {
         maxPoolBoostAmount = _maxPoolBoostAmount;
         maxUserBoostAmount = _maxUserBoostAmount;
         userPoolBoostAmount = _userPoolBoostAmount;
+
+        emit SetBoostAmounts(_maxPoolBoostAmount, _maxUserBoostAmount, _userPoolBoostAmount);
     }
 
     function setPoolBoost (uint256 _pid, bool _isBoostEnabled) public onlyOwner {
         PoolInfo storage pool = poolInfo[_pid];
         pool.isBoostEnabled = _isBoostEnabled;
+
+        emit SetPoolBoost(_pid, _isBoostEnabled);
     }
 
     // Add to general User Boost by Quest Operator
     function addUserBoostByOperator(address _user, uint256 _amount) public onlyOperator {
+        require(_user != address(0), "addUserBoostByOperator: _user is the zero address");
 
         userBoost[_user] = userBoost[_user].add(_amount);
 
         if (userBoost[_user] > maxUserBoostAmount) {
             userBoost[_user] = maxUserBoostAmount;
         }
+        emit UserBoostAddedByOperator(_user, _amount);
     }
 
     // Add to User Pool Boost by Operator
     function addUserPoolBoostByOperator(uint256 _pid, address _user, uint256 _amount) public onlyOperator {
+        require(_user != address(0), "addUserPoolBoostByOperator: _user is the zero address");
 
         UserInfo storage user = userInfo[_pid][_user];
 
@@ -609,23 +631,31 @@ contract HowlsCastle is Ownable, ReentrancyGuard {
         if (user.boost > maxPoolBoostAmount) {
             user.boost = maxPoolBoostAmount;
         }
+
+        emit UserPoolBoostAddedByOperator(_pid, _user, _amount);
     }
 
     // Update dev address by the previous dev.
     function setDevAddress(address _devaddr) public {
-        require(msg.sender == devaddr, "setDevAddress: FORBIDDEN");
-        require(_devaddr != address(0), "setDevAddress: ZERO");
+        require(msg.sender == devaddr, "setDevAddress: can only be called by dev");
+        require(_devaddr != address(0), "setDevAddress: devaddr is the zero address");
+
+        emit DevAddressUpdated(devaddr, _devaddr);
         devaddr = _devaddr;
     }
 
     function setFeeAddress(address _feeAddress) public{
-        require(msg.sender == feeAddress, "setFeeAddress: FORBIDDEN");
-        require(_feeAddress != address(0), "setFeeAddress: ZERO");
+        require(msg.sender == feeAddress, "setFeeAddress: can only be called by feeAddress");
+        require(_feeAddress != address(0), "setFeeAddress: feeAddress is the zero address");
+
+        emit FeeAddressUpdated(feeAddress, _feeAddress);
         feeAddress = _feeAddress;
     }
 
     // Update the status of the operator
     function updateOperator(address _operator, bool _status) external onlyOwner {
+        require(_operator != address(0), "updateOperator: _operator is the zero address");
+
         operators[_operator] = _status;
         emit OperatorUpdated(_operator, _status);
     }
@@ -667,6 +697,8 @@ contract HowlsCastle is Ownable, ReentrancyGuard {
     function setReferralCommissionRate(uint16 _referralCommissionRate) public onlyOwner {
         require(_referralCommissionRate <= MAXIMUM_REFERRAL_COMMISSION_RATE, "setReferralCommissionRate: invalid referral commission rate basis points");
         referralCommissionRate = _referralCommissionRate;
+
+        emit SetReferralCommissionRate(_referralCommissionRate);
     }
 
     // Pay referral commission to the referrer who referred this user.

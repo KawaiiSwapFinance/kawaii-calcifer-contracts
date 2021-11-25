@@ -30,9 +30,9 @@ contract Calcifire is Context, IBEP20, Ownable {
     uint256 private _transferFeeTotal;
     uint256 private _tokensToBurnTotal;
 
-    string private _name = "Calcifire";
-    string private _symbol = "CALCIFIRE";
-    uint256 private _decimals = 18;
+    string private constant TOKEN_NAME = "Calcifire";
+    string private constant TOKEN_SYMBOL = "CALCIFIRE";
+    uint256 private constant TOKEN_DECIMALS = 18;
 
     uint256 public _taxFee = 0; // Rewards
     uint256 private _previousTaxFee = _taxFee;
@@ -62,12 +62,12 @@ contract Calcifire is Context, IBEP20, Ownable {
     address public _communityAddress;
     address public _liquidityAddress;
 
-    address private _burnAddress = 0x000000000000000000000000000000000000dEaD;
+    address private constant BURN_ADDR = 0x000000000000000000000000000000000000dEaD;
 
     IUniswapV2Router02 public uniswapV2Router;
     address private _uniswapV2Pair; // Calcifire - BNB
 
-    bool inSwapAndLiquify;
+    bool private inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
     bool public autoSellForTreasury = false;
     bool public autoSellForCommunity = true;
@@ -81,7 +81,7 @@ contract Calcifire is Context, IBEP20, Ownable {
 
     uint256 private numTokensSellToAddToLiquidity = 100 * 10**18;
 
-    // The operator can only update the MaxTransferAmountRate and tax rate
+    // Only operator can update tax rates and control address whitelistings
     address private _operator;
 
     bool public tradingOpen = false;
@@ -102,6 +102,28 @@ contract Calcifire is Context, IBEP20, Ownable {
     event SetAutomatedMarketMakerPair(address indexed pair, bool indexed value);
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event MaxTransferAmountRateUpdated(address indexed operator, uint256 previousRate, uint256 newRate);
+    event SetBurnFeePercent(uint256 burnFee);
+    event SetCommunityFeePercent(uint256 communityFee);
+    event SetLiquidityFeePercent(uint256 liquidityFee);
+    event SetTreasuryFeePercent(uint256 treasuryFee);
+    event SetSellFeePercents(uint256 sellTaxFee, uint256 sellLiquidityFee, uint256 sellBurnFee, uint256 sellTreasuryFee, uint256 sellCommunityFee);
+    event SetOpenTrading(bool tradingOpen);
+    event SetTaxFeePercent(uint256 taxFee);
+    event SetTreasuryAddress(address treasuryAddress);
+    event SetCommunityAddress(address communityAddress);
+    event SetLiquidityTaxAddress(address liquidityTaxAddress);
+    event SetNumTokensSellToAddToLiquidity(uint256 _numTokensSellToAddToLiquidity);
+    event SetAutoSellForTreasury(bool _enabled);
+    event SetAutoSellForCommunity(bool _enabled);
+    event SetBurnToBurnAddress(bool _enabled);
+    event SetDeflationary(bool value);
+    event AddrAddedToReflection(address addr);
+    event SetExcludedFromAntiWhale(address _account, bool _excludedAntiWhale);
+    event AutoAddLiquidityRouterUpdated(address newRouter);
+    event AddrExcludedFromReward(address account);
+    event AddrIncludedInReward(address account);
+    event AddrExcludedFromFee(address account);
+    event AddrIncludedInFee(address account);
 
     modifier onlyOperator() {
         require(_operator == msg.sender, "operator: caller is not the operator");
@@ -127,6 +149,10 @@ contract Calcifire is Context, IBEP20, Ownable {
     }
 
     constructor (address treasuryAddress, address communityAddress, address liquidityAddress) public {
+        require(treasuryAddress != address(0), "CALCIFIRE::treasuryAddress is the zero address");
+        require(communityAddress != address(0), "CALCIFIRE::communityAddress is the zero address");
+        require(liquidityAddress != address(0), "CALCIFIRE::liquidityAddress is the zero address");
+
         _operator = _msgSender();
         emit OperatorTransferred(address(0), _operator);
 
@@ -194,6 +220,8 @@ contract Calcifire is Context, IBEP20, Ownable {
         }
 
         isDeflationary = value;
+
+        emit SetDeflationary(value);
     }
 
     //update _reflectOwned after entering deflationary phase
@@ -204,6 +232,8 @@ contract Calcifire is Context, IBEP20, Ownable {
         _reflectOwned[addr] = _reflectOwned[addr].add(_tokenOwned[addr].mul(currentRate));
 
         _addedReflection[addr] = true;
+
+        emit AddrAddedToReflection(addr);
       }
     }
 
@@ -227,6 +257,8 @@ contract Calcifire is Context, IBEP20, Ownable {
    //@dev Exclude or include an address from antiWhale. Can only be called by the current operator.
    function setExcludedFromAntiWhale(address _account, bool _excludedAntiWhale) public onlyOperator {
        _excludedFromAntiWhale[_account] = _excludedAntiWhale;
+
+       emit SetExcludedFromAntiWhale(_account, _excludedAntiWhale);
    }
 
    // @dev Returns the max transfer amount.
@@ -248,18 +280,25 @@ contract Calcifire is Context, IBEP20, Ownable {
 
     // update router for auto add liquidity incase pancakeswap router changes
     function updateAutoAddLiquidityRouter(address newRouter) public onlyOperator {
+        require(newRouter != address(0), "CALCIFIRE::updateAutoAddLiquidityRouter: newRouter is the zero address");
+
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(newRouter);  // V2!
         uniswapV2Router = _uniswapV2Router;
+
+        emit AutoAddLiquidityRouterUpdated(newRouter);
+
+
     }
 
     function setAutomatedMarketMakerPair(address pair, bool value) public onlyOperator {
+        require(pair != address(0), "CALCIFIRE::setAutomatedMarketMakerPair: pair is the zero address");
         require(pair != _uniswapV2Pair, "The PancakeSwap pair cannot be removed from automatedMarketMakerPairs");
 
         _setAutomatedMarketMakerPair(pair, value);
     }
 
     function _setAutomatedMarketMakerPair(address pair, bool value) private {
-        require(automatedMarketMakerPairs[pair] != value, "ADAFlect: Automated market maker pair is already set to that value");
+        require(automatedMarketMakerPairs[pair] != value, "CALCIFIRE::setAutomatedMarketMakerPair: Automated market maker pair is already set to that value");
         automatedMarketMakerPairs[pair] = value;
 
         emit SetAutomatedMarketMakerPair(pair, value);
@@ -280,15 +319,15 @@ contract Calcifire is Context, IBEP20, Ownable {
     }
 
     function name() public view override returns (string memory) {
-        return _name;
+        return TOKEN_NAME;
     }
 
     function symbol() public view override returns (string memory) {
-        return _symbol;
+        return TOKEN_SYMBOL;
     }
 
     function decimals() public view override returns (uint256) {
-        return _decimals;
+        return TOKEN_DECIMALS;
     }
 
     function getOwner() external override view returns (address) {
@@ -379,13 +418,14 @@ contract Calcifire is Context, IBEP20, Ownable {
     }
 
     function excludeFromReward(address account) public onlyOperator {
-        // require(account != 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D, 'We can not exclude Uniswap router.');
         require(!_isExcluded[account], "excluded");
         if(_reflectOwned[account] > 0) {
                 _tokenOwned[account] = tokenFromReflection(_reflectOwned[account]);
             }
             _isExcluded[account] = true;
             _excluded.push(account);
+
+            emit AddrExcludedFromReward(account);
     }
 
     function includeInReward(address account) external onlyOperator {
@@ -396,6 +436,8 @@ contract Calcifire is Context, IBEP20, Ownable {
                     _tokenOwned[account] = 0;
                     _isExcluded[account] = false;
                     _excluded.pop();
+
+                    emit AddrIncludedInReward(account);
                     break;
                 }
             }
@@ -403,10 +445,14 @@ contract Calcifire is Context, IBEP20, Ownable {
 
     function excludeFromFee(address account) public onlyOperator {
         _isExcludedFromFee[account] = true;
+
+        emit AddrExcludedFromFee(account);
     }
 
     function includeInFee(address account) public onlyOperator {
         _isExcludedFromFee[account] = false;
+
+        emit AddrIncludedInFee(account);
     }
 
     // Sell taxes cant be higher than 20%
@@ -417,50 +463,75 @@ contract Calcifire is Context, IBEP20, Ownable {
         _sellBurnFee = sellBurnFee;
         _sellTreasuryFee = sellTreasuryFee;
         _sellCommunityFee = sellCommunityFee;
+
+        emit SetSellFeePercents(sellTaxFee, sellLiquidityFee, sellBurnFee, sellTreasuryFee, sellCommunityFee);
     }
 
     function openTrading() external onlyOwner {
         tradingOpen = true;
+
+        emit SetOpenTrading(tradingOpen);
     }
 
     // Buy taxes can't be higher than 10%
     function setTaxFeePercent(uint256 taxFee) external onlyOperator {
         require((taxFee + _liquidityFee + _communityFee + _treasuryFee + _burnFee) <= 10, ">Max");
         _taxFee = taxFee;
+
+        emit SetTaxFeePercent(taxFee);
     }
 
     function setLiquidityFeePercent(uint256 liquidityFee) external onlyOperator {
         require((_taxFee + liquidityFee + _communityFee + _treasuryFee + _burnFee) <= 10, ">Max");
         _liquidityFee = liquidityFee;
+
+        emit SetLiquidityFeePercent(liquidityFee);
     }
 
     function setCommunityFeePercent(uint256 communityFee) external onlyOperator {
         require((_taxFee + _liquidityFee + communityFee + _treasuryFee + _burnFee) <= 10, ">Max");
         _communityFee = communityFee;
+
+        emit SetCommunityFeePercent(communityFee);
     }
 
     function setTreasuryFeePercent(uint256 treasuryFee) external onlyOperator {
         require((_taxFee + _liquidityFee + _communityFee + treasuryFee + _burnFee) <= 10, ">Max");
         _treasuryFee = treasuryFee;
+
+        emit SetTreasuryFeePercent(treasuryFee);
     }
 
     function setBurnFeePercent(uint256 burnFee) external onlyOperator {
         require((_taxFee + _liquidityFee + _communityFee + _treasuryFee + burnFee) <= 10, ">Max");
         _burnFee = burnFee;
+
+        emit SetBurnFeePercent(burnFee);
     }
 
     function setTreasuryAddress(address treasuryAddress) external onlyOperator {
         require(!contains(treasuryAddress), "!Existing");
+        require(treasuryAddress != address(0), "CALCIFIRE::setTreasuryAddress: treasuryAddress is the zero address");
+
         _treasuryAddress = treasuryAddress;
+
+        emit SetTreasuryAddress(treasuryAddress);
     }
 
     function setCommunityAddress(address communityAddress) external onlyOperator {
         require(!contains(communityAddress), "!Existing");
+        require(communityAddress != address(0), "CALCIFIRE::setCommunityAddress: communityAddress is the zero address");
+
         _communityAddress = communityAddress;
+
+        emit SetCommunityAddress(communityAddress);
     }
 
     function setLiquidityTaxAddress(address liquidityTaxAddress) external onlyOperator {
+        require(liquidityTaxAddress != address(0), "CALCIFIRE::setLiquidityTaxAddress: liquidityTaxAddress is the zero address");
         _liquidityAddress = liquidityTaxAddress;
+
+        emit SetLiquidityTaxAddress(liquidityTaxAddress);
     }
 
     function setSwapAndLiquifyEnabled(bool _enabled) external onlyOperator {
@@ -471,18 +542,26 @@ contract Calcifire is Context, IBEP20, Ownable {
     function setNumTokensSellToAddToLiquidity(uint256 _numTokensSellToAddToLiquidity) external onlyOperator {
         require(_numTokensSellToAddToLiquidity <= maxTransferAmount(), "out of range");
         numTokensSellToAddToLiquidity = _numTokensSellToAddToLiquidity;
+
+        emit SetNumTokensSellToAddToLiquidity(_numTokensSellToAddToLiquidity);
     }
 
     function setAutoSellForTreasury(bool _enabled) external onlyOperator {
         autoSellForTreasury = _enabled;
+
+        emit SetAutoSellForTreasury(_enabled);
     }
 
     function setAutoSellForCommunity(bool _enabled) external onlyOperator {
         autoSellForCommunity = _enabled;
+
+        emit SetAutoSellForCommunity(_enabled);
     }
 
     function setBurnToBurnAddress(bool _enabled) external onlyOperator {
         burnToBurnAddress = _enabled;
+
+        emit SetBurnToBurnAddress(_enabled);
     }
 
      //to recieve ETH from uniswapV2Router when swaping
@@ -660,7 +739,7 @@ contract Calcifire is Context, IBEP20, Ownable {
 
         // Send to burn addie
         if(burnAmount > 0){
-            _tokenTransfer(address(this), _burnAddress, burnAmount, false);
+            _tokenTransfer(address(this), BURN_ADDR, burnAmount, false);
         }
 
         // send to liquidity addie
@@ -678,7 +757,7 @@ contract Calcifire is Context, IBEP20, Ownable {
 
              // Do not trigger if already in swap
             require(!inSwapAndLiquify, "Currently processing liquidity, try later.");
-            if (percent_Of_Tokens > 100){percent_Of_Tokens == 100;}
+            if (percent_Of_Tokens > 100){percent_Of_Tokens = 100;}
             uint256 tokensOnContract = balanceOf(address(this));
             uint256 sendTokens = tokensOnContract.mul(percent_Of_Tokens).div(100);
             swapAndLiquify(sendTokens);
@@ -890,15 +969,15 @@ contract Calcifire is Context, IBEP20, Ownable {
 
     /// @notice A checkpoint for marking number of votes from a given block
     struct Checkpoint {
-        uint32 fromBlock;
+        uint256 fromBlock;
         uint256 votes;
     }
 
     /// @notice A record of votes checkpoints for each account, by index
-    mapping (address => mapping (uint32 => Checkpoint)) public checkpoints;
+    mapping (address => mapping (uint256 => Checkpoint)) public checkpoints;
 
     /// @notice The number of checkpoints for each account
-    mapping (address => uint32) public numCheckpoints;
+    mapping (address => uint256) public numCheckpoints;
 
     /// @notice The EIP-712 typehash for the contract's domain
     bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)");
@@ -997,7 +1076,7 @@ contract Calcifire is Context, IBEP20, Ownable {
         view
         returns (uint256)
     {
-        uint32 nCheckpoints = numCheckpoints[account];
+        uint256 nCheckpoints = numCheckpoints[account];
         return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
     }
 
@@ -1015,7 +1094,7 @@ contract Calcifire is Context, IBEP20, Ownable {
     {
         require(blockNumber < block.number, "CALCIFIRE::getPriorVotes: not yet determined");
 
-        uint32 nCheckpoints = numCheckpoints[account];
+        uint256 nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
             return 0;
         }
@@ -1030,10 +1109,11 @@ contract Calcifire is Context, IBEP20, Ownable {
             return 0;
         }
 
-        uint32 lower = 0;
-        uint32 upper = nCheckpoints - 1;
+        uint256 lower = 0;
+        uint256 upper = nCheckpoints - 1;
         while (upper > lower) {
-            uint32 center = upper - (upper - lower) / 2; // ceil, avoiding overflow
+            uint256 center = upper.sub((upper.sub(lower)).div(2)); // ceil, avoiding overflow
+
             Checkpoint memory cp = checkpoints[account][center];
             if (cp.fromBlock == blockNumber) {
                 return cp.votes;
@@ -1062,7 +1142,7 @@ contract Calcifire is Context, IBEP20, Ownable {
         if (srcRep != dstRep && amount > 0) {
             if (srcRep != address(0)) {
                 // decrease old representative
-                uint32 srcRepNum = numCheckpoints[srcRep];
+                uint256 srcRepNum = numCheckpoints[srcRep];
                 uint256 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
                 uint256 srcRepNew = srcRepOld.sub(amount);
                 _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
@@ -1070,7 +1150,7 @@ contract Calcifire is Context, IBEP20, Ownable {
 
             if (dstRep != address(0)) {
                 // increase new representative
-                uint32 dstRepNum = numCheckpoints[dstRep];
+                uint256 dstRepNum = numCheckpoints[dstRep];
                 uint256 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
                 uint256 dstRepNew = dstRepOld.add(amount);
                 _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
@@ -1080,12 +1160,12 @@ contract Calcifire is Context, IBEP20, Ownable {
 
     function _writeCheckpoint(
         address delegatee,
-        uint32 nCheckpoints,
+        uint256 nCheckpoints,
         uint256 oldVotes,
         uint256 newVotes
     ) internal
     {
-        uint32 blockNumber = safe32(block.number, "CALCIFIRE::_writeCheckpoint: block number exceeds 32 bits");
+        uint256 blockNumber = safe32(block.number, "CALCIFIRE::_writeCheckpoint: block number exceeds 32 bits");
 
         if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
             checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
@@ -1097,9 +1177,9 @@ contract Calcifire is Context, IBEP20, Ownable {
         emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
     }
 
-    function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
+    function safe32(uint n, string memory errorMessage) internal pure returns (uint256) {
         require(n < 2**32, errorMessage);
-        return uint32(n);
+        return uint256(n);
     }
 
     function getChainId() internal pure returns (uint) {
